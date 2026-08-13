@@ -105,7 +105,7 @@ def env_path() -> str:
     """The .env of the gateway that spawned us.
 
     Each gateway runs with its own HOME (the sister's instance lives under
-    /Users/hermes/imouto-home), so per-instance settings have to come from
+    /Users/hermes/manabi-home), so per-instance settings have to come from
     there rather than from one hard-coded file.
     """
     home = os.environ.get("HOME") or ""
@@ -400,9 +400,11 @@ def _after_turn() -> str:
     変わったのに画像が無ければ作る、の二つ。履歴が git にあるので、記録は
     追記で積まずに書き換えられる。画像のほうは「計画を直したら見せる」が
     指示だけでは落ちるので、落ちたぶんをここで拾う。
-    妹用のインスタンスだけの振る舞いなので HOME で見分ける。
+    まなび側だけの振る舞い。本体の HOME は /Users/hermes そのもので、まなびは
+    その下のディレクトリを HOME にしている。ディレクトリ名(imouto-home →
+    manabi-home)は変わりうるので、名前ではなく「本体かどうか」で見分ける。
     """
-    if os.path.basename(os.environ.get("HOME", "").rstrip("/")) != "imouto-home":
+    if os.path.realpath(os.environ.get("HOME", "")) == "/Users/hermes":
         return ""
     try:
         proc = subprocess.run(
@@ -588,7 +590,7 @@ def _selftest() -> int:
     assert _content_blocks("ふつうの文") == [{"type": "text", "text": "ふつうの文"}]
     stamped = _with_now("やあ")
     assert stamped.startswith("【いま 20") and stamped.endswith("JST】\nやあ")
-    missing = "/Users/hermes/imouto-home/.hermes/cache/documents/nope.pdf"
+    missing = "/Users/hermes/manabi-home/.hermes/cache/documents/nope.pdf"
     assert _content_blocks(missing) == [{"type": "text", "text": missing}]
     assert _ARCHIVE_RE.findall("~/study/exams/raw/a.pdf を見て") == ["~/study/exams/raw/a.pdf"]
     many = " ".join("/Users/hsandbox/study/exams/raw/%d.pdf" % i for i in range(5))
