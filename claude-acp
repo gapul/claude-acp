@@ -415,10 +415,10 @@ def _after_turn() -> str:
     except Exception as exc:
         log("after-turn housekeeping failed: %s" % exc)
         return ""
-    for line in (proc.stdout or "").splitlines():
-        if line.startswith("MEDIA:"):
-            return line.strip()
-    return ""
+    lines = [l.strip() for l in (proc.stdout or "").splitlines()
+             if l.startswith("MEDIA:")]
+    # 計画が複数ページに割れることがある。1行だけ返すと2ページ目以降が届かない
+    return "\n".join(lines)
 
 
 def _content_blocks(text: str) -> list:
