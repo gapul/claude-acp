@@ -39,6 +39,8 @@ HERMES_COPILOT_ACP_ARGS=
 `config.yaml` は `model.provider: copilot-acp`。`claude` CLI が PATH にあり、認証済みで
 あること（ヘッドレス機なら `claude setup-token` で得た `CLAUDE_CODE_OAUTH_TOKEN`）。
 
+インスタンスの `.env` で `CLAUDE_ACP_STUDY_HOOKS=1` を設定すると、`/Users/hsandbox/study` 配下のアーカイブ済み原本ファイルの添付と、サンドボックス内でのターン後フックの実行という学習チューター専用の拡張機能が有効になる（デフォルトは無効である）。ボットとの対話では誰でも任意のパスを入力できるため、添付ファイルはゲートウェイ自身の `$HOME/.hermes/cache` 配下にあるもののみが読み込まれ、会話内に現れるそれ以外のパスは無視される。
+
 ## 壊れやすさ
 
 合わせている相手は Hermes 内部の `agent/copilot_acp_client.py` であって、公開 API ではない。

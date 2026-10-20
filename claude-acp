@@ -263,6 +263,30 @@ def _save_state(session_id: str, base_prompt: str, model: str) -> None:
 # it look at the picture itself.
 _ATTACH_RE = re.compile(
     r"/[^\s\"'<>|]*/\.hermes/cache/(?:documents|images|screenshots)/[^\s\"'<>|)\]]+")
+
+
+def _own_attachment(path: str) -> bool:
+    """Only files under this gateway's own cache.
+
+    The path comes from the conversation, so anyone talking to the bot can
+    type one. Without this check, a user of one instance could name a file in
+    another instance's cache and have it read out to them.
+    """
+    home = os.path.realpath(os.environ.get("HOME") or "/nonexistent")
+    root = os.path.join(home, ".hermes", "cache") + os.sep
+    return os.path.realpath(path).startswith(root)
+
+
+def study_hooks_enabled() -> bool:
+    """The study tutor's extras: filed-away originals and the after-turn hook.
+
+    Opt-in per instance (CLAUDE_ACP_STUDY_HOOKS=1 in its .env). Both reach into
+    the tutor's sandbox at /Users/hsandbox/study, which no other instance has
+    any business reading — least of all one that strangers can talk to.
+    """
+    return read_env_value("CLAUDE_ACP_STUDY_HOOKS") == "1"
+
+
 # Originals the agent filed away earlier. Same treatment as a fresh attachment:
 # if the path comes up in the conversation, put the picture in front of it.
 SANDBOX_HOME = "/Users/hsandbox"
@@ -400,11 +424,11 @@ def _after_turn() -> str:
     変わったのに画像が無ければ作る、の二つ。履歴が git にあるので、記録は
     追記で積まずに書き換えられる。画像のほうは「計画を直したら見せる」が
     指示だけでは落ちるので、落ちたぶんをここで拾う。
-    まなび側だけの振る舞い。本体の HOME は /Users/hermes そのもので、まなびは
-    その下のディレクトリを HOME にしている。ディレクトリ名(imouto-home →
-    manabi-home)は変わりうるので、名前ではなく「本体かどうか」で見分ける。
+    まなび側だけの振る舞い。.env の CLAUDE_ACP_STUDY_HOOKS=1 で有効になる。
+    「本体以外なら有効」にしていたが、本体以外の gateway が増えると
+    そちらまでまなびのサンドボックスに触ってしまうので、明示的に有効にする。
     """
-    if os.path.realpath(os.environ.get("HOME", "")) == "/Users/hermes":
+    if not study_hooks_enabled():
         return ""
     try:
         proc = subprocess.run(
@@ -426,14 +450,17 @@ def _content_blocks(text: str) -> list:
     # Fresh attachments are what the turn is usually about; filed-away
     # originals are often just incidental hits in a search result, so only
     # the most recently mentioned one comes along.
-    archive = [p.replace("~", SANDBOX_HOME, 1) for p in _ARCHIVE_RE.findall(text)]
+    archive = ([p.replace("~", SANDBOX_HOME, 1) for p in _ARCHIVE_RE.findall(text)]
+               if study_hooks_enabled() else [])
     archive = [p for p in archive
                if _ATTACH_MEDIA.get(os.path.splitext(p.rstrip(".,;:"))[1].lower())]
+    archive = [p.rstrip(".,;:") for p in archive]
     found = _ATTACH_RE.findall(text) + archive[-ATTACH_MAX_ARCHIVE:]
 
     # 音声は content block にできないので、文字起こしをテキストとして渡す。
     audio = [p.rstrip(".,;:") for p in _ATTACH_RE.findall(text)
-             if os.path.splitext(p.rstrip(".,;:"))[1].lower() in _AUDIO_EXT]
+             if os.path.splitext(p.rstrip(".,;:"))[1].lower() in _AUDIO_EXT
+             and _own_attachment(p.rstrip(".,;:"))]
     spoken = []
     for path in audio[-ATTACH_MAX_AUDIO:]:
         if not os.path.isfile(path):
@@ -450,6 +477,11 @@ def _content_blocks(text: str) -> list:
         if path in seen:
             continue
         seen.add(path)
+        archived = (path in archive and os.path.realpath(path)
+                    .startswith(SANDBOX_HOME + "/study/"))
+        if not archived and not _own_attachment(path):
+            log("attachment outside this instance's cache, skipped:", path)
+            continue
         if _ATTACH_MEDIA.get(os.path.splitext(path)[1].lower()) and os.path.isfile(path):
             paths.append(path)
 
@@ -606,6 +638,10 @@ def _selftest() -> int:
     assert _parse_result_json(stream) == ("done", "abc")
     legacy = '{"result": "old shape", "session_id": "xyz"}'
     assert _parse_result_json(legacy) == ("old shape", "xyz")
+    os.environ["HOME"] = "/nonexistent-claude-acp-test"
+    assert not _own_attachment("/Users/hermes/manabi-home/.hermes/cache/images/a.png")
+    assert not _own_attachment("/nonexistent-claude-acp-test/.hermes/cache/../../x.png")
+    assert _own_attachment("/nonexistent-claude-acp-test/.hermes/cache/images/a.png")
     print("selftest ok")
     return 0
 
